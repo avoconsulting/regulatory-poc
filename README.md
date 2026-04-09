@@ -20,6 +20,16 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Team Skill: Peer Code Review
+
+This skill is applicable across the entire project and should be used for every change.
+
+- Keep pull requests small and focused
+- Review correctness, edge cases, and security implications
+- Check accessibility, performance, and design consistency
+- Provide actionable, respectful feedback with examples
+- Summarize decisions and follow-ups in the PR thread
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
