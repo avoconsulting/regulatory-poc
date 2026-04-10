@@ -95,7 +95,7 @@ export interface Database {
           content: string;
           source_url: string | null;
           category: string | null;
-          embedding: number[] | null;
+          embedding: number[] | null; // vector(1024) — Voyage-3
           metadata: Json | null;
           created_at: string;
           updated_at: string;

@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import type { DocumentChunk } from "./chunk";
 
@@ -6,19 +5,9 @@ import type { DocumentChunk } from "./chunk";
 // Konfigurasjon
 // ──────────────────────────────────────────────
 
-const EMBEDDING_MODEL = "text-embedding-3-small";
-const EMBEDDING_DIMENSIONS = 1536;
-const BATCH_SIZE = 20; // OpenAI anbefaler maks 2048, men vi holder det lavt for stabilitet
-
-// ──────────────────────────────────────────────
-// Klienter (bruker service role for skrivetilgang)
-// ──────────────────────────────────────────────
-
-function getOpenAI() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY er ikke satt");
-  return new OpenAI({ apiKey });
-}
+const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
+const EMBEDDING_MODEL = "voyage-3";
+const BATCH_SIZE = 20;
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -33,23 +22,44 @@ function getSupabase() {
 // Generer embeddings i batches
 // ──────────────────────────────────────────────
 
+async function voyageEmbed(
+  texts: string[],
+  inputType: "document" | "query"
+): Promise<number[][]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY er ikke satt");
+
+  const res = await fetch(VOYAGE_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: texts,
+      input_type: inputType,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Voyage API-feil: ${res.status} ${body}`);
+  }
+
+  const data = await res.json();
+  return data.data.map((item: { embedding: number[] }) => item.embedding);
+}
+
 export async function generateEmbeddings(
   texts: string[]
 ): Promise<number[][]> {
-  const openai = getOpenAI();
   const embeddings: number[][] = [];
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
-    const response = await openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: batch,
-      dimensions: EMBEDDING_DIMENSIONS,
-    });
-
-    for (const item of response.data) {
-      embeddings.push(item.embedding);
-    }
+    const batchEmbeddings = await voyageEmbed(batch, "document");
+    embeddings.push(...batchEmbeddings);
   }
 
   return embeddings;

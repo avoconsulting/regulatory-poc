@@ -1,6 +1,8 @@
-import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../database.types";
+
+const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
+const EMBEDDING_MODEL = "voyage-3";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -26,21 +28,30 @@ export interface SearchResult {
 // Vektorsøk
 // ──────────────────────────────────────────────
 
-const EMBEDDING_MODEL = "text-embedding-3-small";
-const EMBEDDING_DIMENSIONS = 1536;
-
 async function getQueryEmbedding(query: string): Promise<number[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY er ikke satt");
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY er ikke satt");
 
-  const openai = new OpenAI({ apiKey });
-  const response = await openai.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: query,
-    dimensions: EMBEDDING_DIMENSIONS,
+  const res = await fetch(VOYAGE_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: [query],
+      input_type: "query",
+    }),
   });
 
-  return response.data[0].embedding;
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Voyage API-feil: ${res.status} ${body}`);
+  }
+
+  const data = await res.json();
+  return data.data[0].embedding;
 }
 
 export async function searchDocuments(

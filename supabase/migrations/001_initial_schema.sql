@@ -59,7 +59,7 @@ create table documents (
   content text not null,
   source_url text,
   category text,
-  embedding vector(1536),
+  embedding vector(1024),
   metadata jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -75,7 +75,7 @@ create index idx_documents_embedding on documents
 -- ──────────────────────────────────────────────
 
 create or replace function match_documents(
-  query_embedding vector(1536),
+  query_embedding vector(1024),
   match_threshold float default 0.78,
   match_count int default 5
 )
