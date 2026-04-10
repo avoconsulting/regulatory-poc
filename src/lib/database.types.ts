@@ -124,6 +124,24 @@ export interface Database {
         };
       };
     };
+    Functions: {
+      match_documents: {
+        Args: {
+          query_embedding: string;
+          match_threshold?: number;
+          match_count?: number;
+        };
+        Returns: {
+          id: string;
+          title: string;
+          content: string;
+          source_url: string | null;
+          category: string | null;
+          metadata: Json | null;
+          similarity: number;
+        }[];
+      };
+    };
   };
 }
 

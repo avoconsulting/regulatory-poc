@@ -9,6 +9,10 @@ import {
 } from "./reguleringsplan";
 import type { PlanbestemmelserResultat } from "./planbestemmelser";
 import type { EInnsynSokResultat } from "./einnsyn";
+import {
+  searchDocuments,
+  byggKunnskapsbaseKontekst,
+} from "./pipeline/search";
 
 // ──────────────────────────────────────────────
 // Typer – brukerinput
@@ -285,6 +289,19 @@ export async function analyserReguleringsrisiko(
     .filter(Boolean)
     .join("\n");
 
+  // Søk i kunnskapsbasen om den er tilgjengelig (feiler stille hvis tom/ikke konfigurert)
+  let kunnskapsbaseKontekst = "";
+  try {
+    const searchQuery = `${input.tiltak.beskrivelse} ${input.tiltak.bruksformål ?? ""} reguleringsplan bestemmelser`;
+    const searchResults = await searchDocuments(searchQuery, {
+      matchCount: 6,
+      matchThreshold: 0.72,
+    });
+    kunnskapsbaseKontekst = byggKunnskapsbaseKontekst(searchResults);
+  } catch {
+    // Kunnskapsbasen er ikke konfigurert ennå — analyser uten
+  }
+
   const userPrompt = `# Reguleringsrisikoanalyse
 
 ## Eiendom
@@ -300,6 +317,8 @@ ${tiltakTekst}
 ${byggPlandataKontekst(input.plandata)}
 
 ${byggDispensasjonsKontekst(input.dispensasjonshistorikk)}
+
+${kunnskapsbaseKontekst}
 
 Analyser reguleringsrisikoen for dette tiltaket.`;
 
