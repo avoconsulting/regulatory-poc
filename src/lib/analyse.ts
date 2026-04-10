@@ -1,0 +1,317 @@
+import Anthropic from "@anthropic-ai/sdk";
+import {
+  plantypeTekst,
+  planstatusTekst,
+  arealformaalTekst,
+  type Planomrade,
+  type Arealformaal,
+  type Hensynssone,
+} from "./reguleringsplan";
+import type { PlanbestemmelserResultat } from "./planbestemmelser";
+import type { EInnsynSokResultat } from "./einnsyn";
+
+// ──────────────────────────────────────────────
+// Typer – brukerinput
+// ──────────────────────────────────────────────
+
+export interface Tiltak {
+  beskrivelse: string;
+  byggehøyde?: number;
+  utnyttelsesgrad?: number;
+  bruksformål?: string;
+  antallEnheter?: number;
+  parkering?: string;
+  annet?: string;
+}
+
+export interface AnalyseInput {
+  adresse: string;
+  kommunenavn: string;
+  kommunenummer: string;
+  gardsnummer: number;
+  bruksnummer: number;
+  tiltak: Tiltak;
+  plandata: PlanbestemmelserResultat;
+  dispensasjonshistorikk?: EInnsynSokResultat;
+}
+
+// ──────────────────────────────────────────────
+// Typer – analyseresultat
+// ──────────────────────────────────────────────
+
+export interface RedFlag {
+  tittel: string;
+  beskrivelse: string;
+  alvorlighet: "hard_stop" | "dispenserbar" | "akseptabel_risiko";
+  hjemmel: string;
+  anbefaling: string;
+}
+
+export interface Strategi {
+  navn: string;
+  beskrivelse: string;
+  risikoprofil: "lav" | "moderat" | "høy";
+  redFlags: string[];
+  forventetUtfall: string;
+  anbefalteJusteringer: string[];
+}
+
+export interface Oppside {
+  tittel: string;
+  beskrivelse: string;
+  hjemmel: string;
+  potensial: string;
+}
+
+export interface RisikoAnalyse {
+  oppsummering: string;
+  samletRisikovurdering: "lav" | "moderat" | "høy" | "kritisk";
+  redFlags: RedFlag[];
+  strategier: Strategi[];
+  oppsider: Oppside[];
+  anbefalinger: string[];
+  referanser: string[];
+}
+
+// ──────────────────────────────────────────────
+// Hjelpefunksjon – bygg kontekst fra plandata
+// ──────────────────────────────────────────────
+
+function byggPlandataKontekst(plandata: PlanbestemmelserResultat): string {
+  const deler: string[] = [];
+
+  // WMS-data (arealformål, hensynssoner)
+  if (plandata.wmsPlanomrader.length > 0) {
+    deler.push("## Reguleringsplandata fra DiBK\n");
+    for (const p of plandata.wmsPlanomrader) {
+      deler.push(
+        `### ${p.plannavn}`,
+        `- Plantype: ${plantypeTekst(p.plantype)}`,
+        `- Status: ${planstatusTekst(p.planstatus)}`,
+        `- Plan-ID: ${p["arealplanId.planidentifikasjon"]}`,
+        p.ikrafttredelsesdato
+          ? `- Ikrafttredelse: ${p.ikrafttredelsesdato.slice(0, 10)}`
+          : "",
+        ""
+      );
+    }
+  }
+
+  // Planregister-planer
+  if (plandata.planregisterPlaner.length > 0) {
+    deler.push("## Planer som berører eiendommen\n");
+    for (const p of plandata.planregisterPlaner) {
+      deler.push(
+        `- ${p.plannavn} (${p.plantype}, ${p.planstatus}) — Plan-ID: ${p.planidentifikasjon}`
+      );
+    }
+    deler.push("");
+  }
+
+  // Bestemmelser fra arealplaner.no
+  if (plandata.planMedBestemmelser.length > 0) {
+    deler.push("## Planbestemmelser og dokumenter\n");
+    for (const pmb of plandata.planMedBestemmelser) {
+      deler.push(`### ${pmb.plan.planNavn} (${pmb.plan.planType})`);
+      if (pmb.plan.iKraft) {
+        deler.push(`Ikrafttredelse: ${pmb.plan.iKraft.slice(0, 10)}`);
+      }
+
+      if (pmb.bestemmelser.length > 0) {
+        deler.push(`\nBestemmelser:`);
+        for (const b of pmb.bestemmelser) {
+          deler.push(`- ${b.dokumentnavn} (${b.dokumenttype})`);
+        }
+      }
+
+      if (pmb.dispensasjoner.length > 0) {
+        deler.push(`\nDispensasjoner innvilget under denne planen:`);
+        for (const d of pmb.dispensasjoner) {
+          deler.push(
+            `- ${d.dispensasjonstype ?? "Dispensasjon"}: ${d.beskrivelse ?? "Ingen beskrivelse"}${d.vedtaksdato ? ` (vedtak ${d.vedtaksdato.slice(0, 10)})` : ""}`
+          );
+        }
+      }
+
+      deler.push("");
+    }
+  }
+
+  // Planslurpen AI-status
+  if (plandata.planslurpStatuser.length > 0) {
+    deler.push("## AI-tolkning av bestemmelser (Planslurpen)\n");
+    for (const s of plandata.planslurpStatuser) {
+      deler.push(
+        `- Plan ${s.planId}: ${s.status.navn} (AI v${s.aiVersjon})`
+      );
+    }
+    deler.push("");
+  }
+
+  // Planer ikke funnet i arealplaner.no
+  if (plandata.ikkeIArealplaner.length > 0) {
+    deler.push("## Planer uten tilgjengelige bestemmelser\n");
+    for (const p of plandata.ikkeIArealplaner) {
+      deler.push(
+        `- ${p.plannavn} (${p.planidentifikasjon}) — bestemmelsesdokumenter ikke tilgjengelig digitalt`
+      );
+    }
+    deler.push("");
+  }
+
+  return deler.filter(Boolean).join("\n");
+}
+
+function byggDispensasjonsKontekst(
+  resultat: EInnsynSokResultat | undefined
+): string {
+  if (!resultat || resultat.items.length === 0) return "";
+
+  const deler = ["## Dispensasjonshistorikk fra eInnsyn\n"];
+  for (const item of resultat.items) {
+    if (item.entity === "Journalpost") {
+      deler.push(
+        `- [Journalpost] ${item.offentligTittel} (${item.journaldato ?? "ukjent dato"})`
+      );
+    } else {
+      deler.push(
+        `- [Saksmappe] ${item.offentligTittel}`
+      );
+    }
+  }
+  return deler.join("\n");
+}
+
+// ──────────────────────────────────────────────
+// System-prompt
+// ──────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `Du er en ekspert på norsk plan- og bygningsrett med dyp kunnskap om reguleringsplaner, plan- og bygningsloven (PBL), dispensasjonspraksis og kommunal saksbehandling.
+
+Din oppgave er å analysere reguleringsrisiko for et foreslått byggetiltak basert på tilgjengelig plandata, bestemmelser og dispensasjonshistorikk.
+
+## Oppgaven
+
+Gitt en eiendom, gjeldende planer og et ønsket tiltak:
+
+1. **Identifiser red flags** — konflikter mellom tiltaket og gjeldende bestemmelser. Kategoriser hver som:
+   - \`hard_stop\`: Direkte i strid med lov eller plan uten realistisk dispensasjonsmulighet
+   - \`dispenserbar\`: Krever dispensasjon, men det finnes presedens eller grunnlag for at det kan innvilges
+   - \`akseptabel_risiko\`: Mindre avvik som normalt aksepteres i praksis
+
+2. **Foreslå 2–3 strategier** med ulik risikoprofil. Hver strategi skal inneholde konkrete justeringer av tiltaket.
+
+3. **Identifiser oppsider** — muligheter i planen eller overordnede planer som tiltakshaver kan utnytte.
+
+4. **Gi en samlet risikovurdering** (lav/moderat/høy/kritisk).
+
+## Regler
+
+- Referer alltid til konkrete bestemmelser, paragrafer eller planer.
+- Vær spesifikk om byggehøyder, utnyttingsgrad og andre målbare parametre.
+- Bruk norske fagtermer.
+- Ikke dikter opp lovparagrafer — referer kun til det som finnes i konteksten.
+- Hvis data mangler, si eksplisitt hva som mangler og hvordan det påvirker analysen.
+- Vær ærlig om usikkerhet.
+
+## Svarformat
+
+Svar i JSON med følgende struktur:
+
+{
+  "oppsummering": "Kort oppsummering av risikobildet (2-3 setninger)",
+  "samletRisikovurdering": "lav|moderat|høy|kritisk",
+  "redFlags": [
+    {
+      "tittel": "Kort tittel",
+      "beskrivelse": "Detaljert forklaring av konflikten",
+      "alvorlighet": "hard_stop|dispenserbar|akseptabel_risiko",
+      "hjemmel": "Referanse til bestemmelse, paragraf eller plan",
+      "anbefaling": "Hva tiltakshaver bør gjøre"
+    }
+  ],
+  "strategier": [
+    {
+      "navn": "Strateginavn",
+      "beskrivelse": "Beskrivelse av tilnærmingen",
+      "risikoprofil": "lav|moderat|høy",
+      "redFlags": ["Titler på red flags som gjelder denne strategien"],
+      "forventetUtfall": "Vurdering av sannsynlig utfall",
+      "anbefalteJusteringer": ["Konkrete endringer i tiltaket"]
+    }
+  ],
+  "oppsider": [
+    {
+      "tittel": "Kort tittel",
+      "beskrivelse": "Beskrivelse av muligheten",
+      "hjemmel": "Referanse til plan eller bestemmelse",
+      "potensial": "Hva dette kan gi tiltakshaver"
+    }
+  ],
+  "anbefalinger": ["Overordnede anbefalinger for veien videre"],
+  "referanser": ["Liste over planer og dokumenter brukt i analysen"]
+}
+
+Svar KUN med JSON. Ingen tekst før eller etter.`;
+
+// ──────────────────────────────────────────────
+// Hovedfunksjon
+// ──────────────────────────────────────────────
+
+const anthropic = new Anthropic();
+
+export async function analyserReguleringsrisiko(
+  input: AnalyseInput
+): Promise<RisikoAnalyse> {
+  const tiltakTekst = [
+    `Beskrivelse: ${input.tiltak.beskrivelse}`,
+    input.tiltak.byggehøyde != null
+      ? `Ønsket byggehøyde: ${input.tiltak.byggehøyde}m`
+      : null,
+    input.tiltak.utnyttelsesgrad != null
+      ? `Ønsket utnyttelsesgrad: ${input.tiltak.utnyttelsesgrad}%`
+      : null,
+    input.tiltak.bruksformål
+      ? `Bruksformål: ${input.tiltak.bruksformål}`
+      : null,
+    input.tiltak.antallEnheter != null
+      ? `Antall enheter: ${input.tiltak.antallEnheter}`
+      : null,
+    input.tiltak.parkering
+      ? `Parkering: ${input.tiltak.parkering}`
+      : null,
+    input.tiltak.annet ? `Annet: ${input.tiltak.annet}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const userPrompt = `# Reguleringsrisikoanalyse
+
+## Eiendom
+- Adresse: ${input.adresse}
+- Kommune: ${input.kommunenavn} (${input.kommunenummer})
+- Gnr/Bnr: ${input.gardsnummer}/${input.bruksnummer}
+
+## Ønsket tiltak
+${tiltakTekst}
+
+## Tilgjengelig plandata
+
+${byggPlandataKontekst(input.plandata)}
+
+${byggDispensasjonsKontekst(input.dispensasjonshistorikk)}
+
+Analyser reguleringsrisikoen for dette tiltaket.`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  const text =
+    response.content[0].type === "text" ? response.content[0].text : "";
+
+  return JSON.parse(text) as RisikoAnalyse;
+}
