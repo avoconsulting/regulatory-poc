@@ -262,7 +262,10 @@ Svar KUN med JSON. Ingen tekst før eller etter.`;
 // Hovedfunksjon
 // ──────────────────────────────────────────────
 
-const anthropic = new Anthropic();
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  baseURL: process.env.ANTHROPIC_BASE_URL || undefined,
+});
 
 export async function analyserReguleringsrisiko(
   input: AnalyseInput
@@ -332,5 +335,12 @@ Analyser reguleringsrisikoen for dette tiltaket.`;
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
 
-  return JSON.parse(text) as RisikoAnalyse;
+  // Strip markdown code fences om de finnes (```json ... ``` eller ``` ... ```)
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  return JSON.parse(cleaned) as RisikoAnalyse;
 }
