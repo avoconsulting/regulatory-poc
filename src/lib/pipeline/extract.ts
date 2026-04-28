@@ -1,7 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-// @ts-expect-error — pdf-parse ESM export doesn't have proper default type
-import pdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
 
 // ──────────────────────────────────────────────
@@ -21,14 +20,18 @@ export interface ExtractedDocument {
 
 async function extractPdf(filePath: string): Promise<ExtractedDocument> {
   const buffer = await fs.readFile(filePath);
-  const data = await pdfParse(buffer);
-
-  return {
-    filename: path.basename(filePath),
-    filetype: "pdf",
-    text: data.text,
-    pageCount: data.numpages,
-  };
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const result = await parser.getText();
+    return {
+      filename: path.basename(filePath),
+      filetype: "pdf",
+      text: result.text,
+      pageCount: result.total,
+    };
+  } finally {
+    await parser.destroy();
+  }
 }
 
 async function extractDocx(filePath: string): Promise<ExtractedDocument> {
@@ -74,12 +77,27 @@ export async function extractText(filePath: string): Promise<ExtractedDocument> 
 
 const SUPPORTED_EXTENSIONS = new Set([".pdf", ".docx", ".txt", ".md"]);
 
+// Mapper som er interne/organisatoriske — skal ikke i kunnskapsbasen.
+// Sammenlikning gjøres mot trimmet, lowercase navn (pga. trailing spaces og æøå).
+const SKIP_FOLDERS = new Set([
+  "rag.arkitektur",
+  "vektordatabase.organisering",
+  "url.kilde arealplaner.norge",
+  "visualisering av scenarier",
+]);
+
+function shouldSkipFolder(name: string): boolean {
+  return SKIP_FOLDERS.has(name.trim().toLowerCase());
+}
+
 export async function findDocuments(dirPath: string): Promise<string[]> {
   const results: string[] = [];
 
   async function walk(dir: string) {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
+      if (entry.isDirectory() && shouldSkipFolder(entry.name)) continue;
+
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         await walk(fullPath);

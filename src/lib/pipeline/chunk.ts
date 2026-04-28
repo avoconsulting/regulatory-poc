@@ -24,16 +24,69 @@ export interface ChunkMetadata {
 // ──────────────────────────────────────────────
 // Kategori fra mappestruktur
 // ──────────────────────────────────────────────
+//
+// Kundens dokumentsamling følger norsk rettskildelære. Kategoriene under
+// matcher både de nummererte toppmappene (1-7) i "Rettskilder. vektor
+// database ny/" og tverrgående mapper (Innsigelse, KU, Utbyggingsavtaler
+// osv.). Andre toppmapper (Red flagg3/, Arealplaner.veileder/) mappes til
+// relevante kategorier basert på undermappenavn.
 
-const CATEGORY_MAP: Record<string, string> = {
+const NUMBERED_CATEGORIES: Record<string, string> = {
   "1": "lov_og_forskrift",
   "2": "rettspraksis",
-  "3": "forvaltningspraksis",
-  "4": "faglitteratur",
-  "5": "kommunal_praksis",
-  "6": "politisk_risiko",
-  "7": "rekkefolgekrav",
+  "3": "lovforarbeider",
+  "4": "forvaltningspraksis",
+  "5": "sedvane",
+  "6": "faglitteratur",
+  "7": "reelle_hensyn",
 };
+
+function normalizeFolderName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function matchFolderToCategory(folderName: string): string | null {
+  const normalized = normalizeFolderName(folderName);
+
+  const numberedMatch = normalized.match(/^(\d+)[\s.\-–]+/);
+  if (numberedMatch && NUMBERED_CATEGORIES[numberedMatch[1]]) {
+    return NUMBERED_CATEGORIES[numberedMatch[1]];
+  }
+
+  if (normalized.startsWith("innsigelse")) return "innsigelse";
+  if (normalized === "ku" || normalized.startsWith("ku ")) return "ku";
+  if (normalized.startsWith("rettskilde prinsipper")) return "rettskilde_prinsipper";
+  if (
+    normalized.startsWith("utbyggingsavtaler") ||
+    normalized.startsWith("rekkefølgekrav") ||
+    normalized.startsWith("rekkefolgekrav")
+  ) {
+    return "utbyggingsavtaler";
+  }
+
+  if (normalized.startsWith("sjekklister")) return "sjekklister";
+  if (
+    normalized.startsWith("støttedokumenter") ||
+    normalized.startsWith("stottedokumenter")
+  ) {
+    return "stottedokumenter_plan";
+  }
+  if (
+    normalized.startsWith("masteroppgaver") ||
+    normalized.startsWith("referansesaker")
+  ) {
+    return "faglitteratur";
+  }
+  if (normalized.startsWith("arealplan")) return "arealplan_veileder";
+  if (
+    normalized.startsWith("rettsavgjørelser") ||
+    normalized.startsWith("rettsavgjorelser")
+  ) {
+    return "rettspraksis";
+  }
+
+  return null;
+}
 
 export function detectCategory(filePath: string): {
   category: string;
@@ -41,14 +94,13 @@ export function detectCategory(filePath: string): {
 } {
   const parts = filePath.split(path.sep);
 
-  // Prøv å matche mappenummer (f.eks. "1 Lov og forskrift", "Mappe 1", etc.)
-  for (const part of parts) {
-    const match = part.match(/^(\d)/);
-    if (match && CATEGORY_MAP[match[1]]) {
-      return {
-        category: CATEGORY_MAP[match[1]],
-        subcategory: part.replace(/^\d+\s*[-–.]?\s*/, "").trim() || null,
-      };
+  for (let i = 0; i < parts.length; i++) {
+    const category = matchFolderToCategory(parts[i]);
+    if (category) {
+      const next = parts[i + 1];
+      const subcategory =
+        next && next.trim() && !/\.[a-z]+$/i.test(next) ? next.trim() : null;
+      return { category, subcategory };
     }
   }
 
@@ -82,6 +134,7 @@ export function finnLovReferanser(text: string): string[] {
 
 const TARGET_CHUNK_SIZE = 1500; // tegn (~375 tokens)
 const MAX_CHUNK_SIZE = 2500;
+const MIN_CHUNK_SIZE = 100; // dropp TOC-fragmenter og overskrifter uten innhold
 const OVERLAP = 200; // tegn overlapp mellom chunks
 
 // Forsøk å dele på seksjonsoverskrifter først
@@ -113,11 +166,21 @@ function splitBySize(text: string): string[] {
       const sentenceBreak = text.lastIndexOf(". ", end);
       if (sentenceBreak > start + TARGET_CHUNK_SIZE * 0.5) {
         end = sentenceBreak + 1;
+      } else {
+        // Fallback: bryt på ordgrense, aldri midt i et ord
+        const wordBreak = text.lastIndexOf(" ", end);
+        if (wordBreak > start + TARGET_CHUNK_SIZE * 0.3) {
+          end = wordBreak;
+        }
       }
     }
 
     chunks.push(text.slice(start, end));
-    start = end - OVERLAP;
+
+    // Snap overlap-start til neste ord-grense så vi ikke begynner midt i et ord
+    const overlapStart = end - OVERLAP;
+    const nextSpace = text.indexOf(" ", overlapStart);
+    start = nextSpace !== -1 && nextSpace < end ? nextSpace + 1 : overlapStart;
   }
 
   return chunks;
@@ -164,9 +227,14 @@ export function chunkDocument(
     }
   }
 
-  // Steg 3: Bygg chunks med metadata
-  const totalChunks = rawChunks.length;
-  return rawChunks.map((text, i) => ({
+  // Steg 3: Filtrer ut for korte chunks (TOC-fragmenter, tomme overskrifter)
+  const filteredChunks = rawChunks.filter(
+    (c) => c.trim().length >= MIN_CHUNK_SIZE
+  );
+
+  // Steg 4: Bygg chunks med metadata
+  const totalChunks = filteredChunks.length;
+  return filteredChunks.map((text, i) => ({
     text: text.trim(),
     metadata: {
       filename: doc.filename,

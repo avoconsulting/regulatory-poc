@@ -26,8 +26,8 @@ async function voyageEmbed(
   texts: string[],
   inputType: "document" | "query"
 ): Promise<number[][]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY er ikke satt");
+  const apiKey = process.env.VOYAGE_API_KEY;
+  if (!apiKey) throw new Error("VOYAGE_API_KEY er ikke satt");
 
   const res = await fetch(VOYAGE_API_URL, {
     method: "POST",
