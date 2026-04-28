@@ -39,10 +39,10 @@ async function main() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const { data, error } = await supabase.rpc("match_documents", {
+  const { data, error } = await supabase.rpc("match_documents_reranked", {
     query_embedding: embedding,
-    match_threshold: 0.0,
-    match_count: 8,
+    match_threshold: 0.4,
+    match_count: 10,
   });
 
   if (error) {
@@ -50,12 +50,14 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Topp ${data.length} treff (threshold 0.0):\n`);
+  console.log(`Topp ${data.length} treff (reranked, threshold 0.4):\n`);
   for (const row of data) {
     const filename = row.metadata?.filename ?? "(ukjent)";
     const sectionTitle = row.metadata?.sectionTitle;
     const preview = row.content.replace(/\s+/g, " ").slice(0, 200);
-    console.log(`  [${row.similarity.toFixed(3)}] ${filename}`);
+    console.log(
+      `  [rerank ${row.rerank_score.toFixed(3)} = sim ${row.similarity.toFixed(3)} × w ${row.weight.toFixed(2)}] ${filename} (${row.category ?? "ukat"})`
+    );
     if (sectionTitle) console.log(`     § ${sectionTitle}`);
     console.log(`     ${preview}…\n`);
   }

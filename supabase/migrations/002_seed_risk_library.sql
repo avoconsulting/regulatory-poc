@@ -6,7 +6,7 @@
 -- Rettskilde-vekting (reranking-grunnlag for vektorsøk)
 -- ──────────────────────────────────────────────
 
-create table rettskilde_weights (
+create table if not exists rettskilde_weights (
   id uuid primary key default gen_random_uuid(),
   kategori text not null check (kategori in ('Formell', 'Reell', 'Supplerende')),
   kilde text not null unique,
@@ -16,7 +16,7 @@ create table rettskilde_weights (
   typisk_bruk text
 );
 
-create index idx_rettskilde_weights_kategori on rettskilde_weights (kategori);
+create index if not exists idx_rettskilde_weights_kategori on rettskilde_weights (kategori);
 
 insert into rettskilde_weights (kategori, kilde, eksempler, vekt, kommentar, typisk_bruk) values
   ('Formell', 'Grunnloven', '§49, §97, §112', 1.00, 'Overordnet rammeverk for plan- og bygningslovgivningen', 'Tolkningsramme for alle lover'),
@@ -35,13 +35,14 @@ insert into rettskilde_weights (kategori, kilde, eksempler, vekt, kommentar, typ
   ('Supplerende', 'Akademiske artikler / masteroppgaver', 'NMBU, NTNU, UiB', 0.50, 'Forskning og analyse av praksis', 'Gir innsikt i politisk og reguleringsrisiko'),
   ('Supplerende', 'Riksrevisjonen / Difi-rapporter', 'Evalueringer av planprosesser', 0.65, 'Påvirker fremtidig regelverksutvikling', 'Indikator på systemiske risikoer'),
   ('Supplerende', 'Media og fagpresse', 'Arkitektnytt, NRK, Retriever', 0.30, 'Indikator på opinion og politisk risiko', 'Påvirker legitimitet og offentlig debatt'),
-  ('Supplerende', 'Empiriske kilder', 'eInnsyn, PBE saksmapper', 0.45, 'Dokumenterer faktisk prosess og praksis', 'Underlag for risikomodellering');
+  ('Supplerende', 'Empiriske kilder', 'eInnsyn, PBE saksmapper', 0.45, 'Dokumenterer faktisk prosess og praksis', 'Underlag for risikomodellering')
+on conflict (kilde) do nothing;
 
 -- ──────────────────────────────────────────────
 -- Red flag-bibliotek (konkrete risikoflagg med sannsynlighet/konsekvens)
 -- ──────────────────────────────────────────────
 
-create table red_flags (
+create table if not exists red_flags (
   id uuid primary key default gen_random_uuid(),
   rang int not null unique,
   navn text not null unique,
@@ -53,7 +54,7 @@ create table red_flags (
   datakilder text
 );
 
-create index idx_red_flags_kategori on red_flags (risikokategori);
+create index if not exists idx_red_flags_kategori on red_flags (risikokategori);
 
 insert into red_flags (rang, navn, beskrivelse, sannsynlighet, konsekvens, verdipaavirkning, risikokategori, datakilder) values
   (1, 'Mangelfull ROS (flom/kvikkleire/overvann)', 'Plan stoppes eller må utredes på nytt – tids- og verdileveranse', 'Høy (4-5)', 'Kritisk (5)', '20–50%', 'Svært høy', 'NVE flomkart, PBE saksinnsyn, ROS-analyser, NVEs kvikkleiredatabase'),
@@ -70,13 +71,14 @@ insert into red_flags (rang, navn, beskrivelse, sannsynlighet, konsekvens, verdi
   (12, 'Manglende infrastrukturkapasitet', 'Forsinker byggestart og øker investeringsbehov', 'Høy (4)', 'Moderat (3–4)', '10–20%', 'Moderat–høy', 'VAV Oslo, BYM, Planregister, tekniske etater'),
   (13, 'Planfaglig svakhet (ROS/KU/planbeskrivelse)', 'Ny høring og forsinket vedtak', 'Moderat (3)', 'Moderat (3–4)', '5–15%', 'Moderat', 'KDD veileder for planbeskrivelse, PBE veiledere, ROS-analyser'),
   (14, 'Nabo-/interessekonflikter', 'Ekstra runder og krav, verdidempende i sum', 'Høy (4)', 'Moderat (3)', '5–15%', 'Moderat', 'Planinnsyn merknader, høringsuttalelser, lokalpresse'),
-  (15, 'Regelverks-/styringsskifte (innsigelsesrommet endres)', 'Uforutsigbart rammeverk i overgangsperioder', 'Moderat (3)', 'Moderat (3–4)', '5–10%', 'Moderat', 'Regjeringen.no, KDD rundskriv, Statsforvalteren veiledning');
+  (15, 'Regelverks-/styringsskifte (innsigelsesrommet endres)', 'Uforutsigbart rammeverk i overgangsperioder', 'Moderat (3)', 'Moderat (3–4)', '5–10%', 'Moderat', 'Regjeringen.no, KDD rundskriv, Statsforvalteren veiledning')
+on conflict (rang) do nothing;
 
 -- ──────────────────────────────────────────────
 -- Risikokategorier (overordnet taksonomi + tiltak per kategori)
 -- ──────────────────────────────────────────────
 
-create table risk_categories (
+create table if not exists risk_categories (
   id uuid primary key default gen_random_uuid(),
   kategori text not null unique,
   beskrivelse text,
@@ -97,4 +99,5 @@ insert into risk_categories (kategori, beskrivelse, indikatorer, tiltak, relevan
   ('Sosial og medvirkningsrisiko', 'Risiko for motstand fra naboer, organisasjoner eller lokalsamfunn.', 'Høringsuttalelser, media, mobilisering.', 'Tidlig medvirkning, visualisering, transparens, tydelig konsekvensformidling.', 'PBL §§5-1, 12-8, Medvirkningsveilederen (KDD)'),
   ('Innholdsmessig risiko', 'Risiko for at endelig regulering ikke gir ønsket utnyttelse, volum eller funksjon.', 'Endrede byggegrenser, lavere utnyttelse, krav til arkitektur.', 'Dialog med saksbehandler, alternativ plan, arkitektonisk kvalitet som forhandlingsverdi.', 'PBL §§12-7, 12-10'),
   ('Endrings- og stabilitetsrisiko', 'Risiko for at reguleringen endres eller oppheves før realisering.', 'Ny kommuneplan, revidert KDP, statlige føringer.', 'Faseinndelt prosjektstrategi, sikring av rettsvirkning, tidlig rammesøknad.', 'PBL §§12-4, 12-14, 13-1'),
-  ('Datagrunnlagsrisiko', 'Risiko for feil eller utdatert kunnskapsgrunnlag i planprosessen.', 'Gamle temakart, feil høydegrunnlag, manglende støy- eller flomdata.', 'Datavalidering, oppdatert grunnlagsdokumentasjon, kvalitetskontroll.', 'PBL §4-2, KU-forskrift, SOSI-standarder');
+  ('Datagrunnlagsrisiko', 'Risiko for feil eller utdatert kunnskapsgrunnlag i planprosessen.', 'Gamle temakart, feil høydegrunnlag, manglende støy- eller flomdata.', 'Datavalidering, oppdatert grunnlagsdokumentasjon, kvalitetskontroll.', 'PBL §4-2, KU-forskrift, SOSI-standarder')
+on conflict (kategori) do nothing;
