@@ -13,6 +13,8 @@ Etter kundemøte 16. april. Sjekk disse punktene når vi får tilgang til Harddi
 - [ ] Finnes det eksempler på stedsanalyser og ROS-analyser i samlingen? Relevant for å forstå hva Claude bør referere til.
 - [ ] Er det dokumenter om krav til felles planlegging (PBL § 12-1)? Kunden nevner dette som viktig.
 - [ ] Inneholder samlingen noe om endring fra næringsareal til boligareal? Kunden nevner at KMD-rundskriv dekker dette — sjekk at vi har det.
+- [ ] Finnes det eksempler på *planfaglige vurderinger* fra PBE (det kommunen sammenfatter etter planinitiativ)? Disse er malen output vår bør følge — verdifulle som few-shot-eksempler for Claude.
+- [ ] For referansecaser (inkl. Selma Ellefsens vei): har vi også reguleringsbestemmelser for *tilstøtende* eiendommer? Detaljregulering på nabotomt binder — vi må kunne teste at pipelinen henter naboplanene riktig.
 
 ## Filformater og kvalitet
 

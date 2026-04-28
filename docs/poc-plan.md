@@ -19,18 +19,33 @@ Sett opp Next.js-prosjekt med Supabase-integrasjon. Konfigurer auth med magic li
 Integrer mot Kartverkets adresse-API og eiendoms-API. Bruker legger inn adresse eller gnr/bnr, systemet henter areal, kommune og plassering automatisk.
 
 ### Kunnskapsbase (den store jobben)
-Harddisken inneholder ~730 filer fordelt på 7 hovedkategorier. Disse skal bli grunnlaget for vektordatabasen:
+Kundens dokumentsamling ligger i Google Drive (`AVO - samarbeid SP/Mappestruktur/`) med ~7800 filer. Strukturen følger norsk **rettskildelære**, ikke en flat tematisk inndeling. Kategoritaksonomien og vekter er beskrevet i [CLAUDE.md](../CLAUDE.md); pipelinens kategorideteksjon i [src/lib/pipeline/chunk.ts](../src/lib/pipeline/chunk.ts).
 
 **Prioritet 1 – må inn i MVP:**
-Mappe 1 (Lov og forskrift) har PBL kapittelvis, forvaltningsloven, KU-forskriften og KMD-tolkningsuttalelser. Dette er kjernen i analysen. Mappe 5 (Kommunalpraksis) har kommunale sjekklister, veiledere og saksinnsyn. Mappe 7 (Rekkefølgekrav og utbyggingsavtaler) er direkte relevant for risikovurdering.
+- Rettskilder.vektor database ny/ mappe 1 (Lov og forskrift) — PBL, FVL, KU-forskrift, TEK17, SAK10, Naturmangfoldloven, Statlige planretningslinjer.
+- Innsigelse/ og KU/ (tverrgående) — direkte relevant for de dyreste risikoflaggene.
+- Utbyggingsavtaler rekkefølgebestemmelser/ — rang 5 på kundens red flag-liste.
 
 **Prioritet 2 – styrker analysen:**
-Mappe 2 (Rettspraksis) gir presedens fra rettsavgjørelser. Mappe 3 (Forvaltningspraksis KMD) har veiledere, innsigelsessaker og TEK17. Referansesaker-mappen og Oslo kommune planbestemmelser.
+- Mappe 2 (Rettspraksis) og 3 (Lovforarbeider) — presedens og lovgivers intensjon, vekt 0.80–0.90.
+- Mappe 4 (Forvaltningspraksis) inkl. rundskriv og statsforvalteruttalelser.
+- Red flagg3/Sjekklister.Oslo kommune/ og Støttedokumenter.plan/ — PBE-maler, planbeskrivelser, eksempelsaker.
 
 **Prioritet 3 – kontekst og dybde:**
-Mappe 4 (Faglitteratur, Bygg21, masteroppgaver) og Mappe 6 (Politisk risiko, opinion, media). Disse gir kontekst men er ikke kritiske for MVP.
+- Mappe 6 (Fagliteratur, Bygg21, masteroppgaver).
+- Mappe 7 (Reelle hensyn), Mappe 5 (Sedvane).
+
+**Seed-bibliotek (fra kundens kuraterte xlsx-filer):**
+Tre tabeller seedes direkte inn i Supabase, separat fra vektor-ingest (se [002_seed_risk_library.sql](../supabase/migrations/002_seed_risk_library.sql)):
+- `rettskilde_weights` — 17 kildetyper med vekt 0.30–1.00 (Formell/Reell/Supplerende). Brukes til reranking av vektorsøk-resultater.
+- `red_flags` — 15 ferdig-kuraterte risikoflagg med sannsynlighet, konsekvens-%, risikokategori og datakilder.
+- `risk_categories` — 12 overordnede risikotyper med indikatorer, tiltak og PBL-hjemler.
+
+AI-analysen skal *matche mot og utvide* disse bibliotekene, ikke finne opp flagg fra scratch. Kundens forarbeid er startpunkt for red flag-biblioteket, ikke noe som konkurrerer med det.
 
 **Konkret oppgave:** Prosesser dokumentene (PDF-er, docx-filer) til tekst, chunk dem, generer embeddings, lagre i Supabase pgvector. Start med prioritet 1, utvid etterpå. Bruk metadata (kilde, kategori, lovparagraf) for filtrering ved søk.
+
+**Rettskilde-tagging i vektorindeksen:** kategori-metadata på hver chunk brukes sammen med `rettskilde_weights` for reranking — kilder med høy vekt (lov, rettspraksis, rundskriv) løftes fremfor kilder med lav vekt (media, saksframlegg). Mapper markert som interne organisasjonsdokumenter (RAG.Arkitektur/, Vektordatabase.organisering/) ekskluderes via pipelinens skip-liste.
 
 ---
 
@@ -40,8 +55,12 @@ Mappe 4 (Faglitteratur, Bygg21, masteroppgaver) og Mappe 6 (Politisk risiko, opi
 Bygg en pipeline der brukerens input (tomt + tiltak) analyseres mot kunnskapsbasen:
 
 1. Hent tomtdata fra Kartverket basert på brukerens input.
-2. Gjør vektorsøk i kunnskapsbasen for å finne relevante dokumenter (reguleringsbestemmelser, PBL-paragrafer, tidligere vedtak).
-3. Send kontekst + brukerens tiltak til Claude API. Claude identifiserer avvik, vurderer alvorlighetsgrad, og estimerer sannsynlighet for godkjenning.
+2. Hent planstatus både for egen tomt **og tilstøtende eiendommer** (spatial buffer). Detaljregulering på nabotomt binder også, og må inn i kontekst.
+3. Gjør vektorsøk i kunnskapsbasen for å finne relevante dokumenter (reguleringsbestemmelser, PBL-paragrafer, tidligere vedtak).
+4. Send kontekst + brukerens tiltak til Claude API. Claude identifiserer avvik, vurderer alvorlighetsgrad, og estimerer sannsynlighet for godkjenning.
+
+### KU-trigger som primær risikosjekk
+Konsekvensutredning utløst midt i reguleringsfasen er blant de dyreste enkeltrisikoene (kan koste år). Egen sjekk tidlig i pipelinen: matcher tiltaket noen av triggerne i KU-forskriften (formålsendring, størrelse, berørte interesser, beliggenhet i sårbart område)? Høy vekting i samlet risikoscore, eget flagg i output.
 
 ### Red flag-bibliotek
 Dette er det Miro-brettet fremhever som det viktigste å demonstrere. MVP-en skal vise at løsningen bygger sitt eget red flag-bibliotek gjennom RAG. Konkret: Claude identifiserer røde flagg fra dokumentene og kategoriserer dem (hard stop vs. dispenserbart vs. akseptabel risiko). Over tid vokser biblioteket etter hvert som nye caser analyseres.
@@ -57,6 +76,8 @@ POC-scopet nevner rådgivning/optimalisering og konseptutvikling (kvartal/punkth
 
 ### Resultatside
 Vis resultatet oversiktlig: samlet risikovurdering, red flags med forklaring, strategialternativer med anbefaling, referanser til relevante dokumenter og lovhjemler. Alt forklart på norsk, i naturlig språk.
+
+Strukturer output etter malen for *planfaglig vurdering* som PBE sammenfatter etter planinitiativ (stedsanalyse, ROS, forhold til overordnede planer, rekkefølgekrav). Da blir analysen direkte brukbar som utgangspunkt for dialog med PBE, ikke bare et internt beslutningsgrunnlag.
 
 ---
 
