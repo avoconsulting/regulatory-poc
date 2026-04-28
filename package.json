@@ -6,7 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ingest": "npx tsx --env-file=.env.local scripts/ingest.ts",
+    "probe:db": "npx tsx --env-file=.env.local scripts/probe-db.ts",
+    "probe:chunks": "npx tsx --env-file=.env.local scripts/probe-chunks.ts",
+    "probe:index": "npx tsx --env-file=.env.local scripts/probe-index.ts",
+    "probe:vectors": "npx tsx --env-file=.env.local scripts/probe-vectors.ts",
+    "probe:search": "npx tsx --env-file=.env.local scripts/probe-search.ts",
+    "probe:similarity": "npx tsx --env-file=.env.local scripts/probe-similarity.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.87.0",
