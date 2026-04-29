@@ -65,7 +65,7 @@ export async function searchDocuments(
   }
 ): Promise<SearchResult[]> {
   const embedding = await getQueryEmbedding(query);
-  const threshold = opts?.matchThreshold ?? 0.4;
+  const threshold = opts?.matchThreshold ?? 0.3;
   const count = opts?.matchCount ?? 8;
 
   const supabase = getSupabase();

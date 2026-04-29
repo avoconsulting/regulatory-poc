@@ -41,7 +41,7 @@ async function main() {
 
   const { data, error } = await supabase.rpc("match_documents_reranked", {
     query_embedding: embedding,
-    match_threshold: 0.4,
+    match_threshold: 0.3,
     match_count: 10,
   });
 
@@ -50,7 +50,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Topp ${data.length} treff (reranked, threshold 0.4):\n`);
+  console.log(`Topp ${data.length} treff (reranked + deduped, threshold 0.3):\n`);
   for (const row of data) {
     const filename = row.metadata?.filename ?? "(ukjent)";
     const sectionTitle = row.metadata?.sectionTitle;
