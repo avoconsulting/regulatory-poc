@@ -212,13 +212,14 @@ export async function hentPlanMedBestemmelser(
   const kundeId = await finnKundeId(kommunenummer);
   if (!kundeId) return null;
 
-  const planer = await hentPlanerForKommune(kundeId, {
-    planidentifikasjonLike: planidentifikasjon,
-  });
+  // Arealplaner.no-API-en ignorerer PlanidentifikasjonLike-filteret og
+  // returnerer alle planer i kommunen uansett. Vi må filtrere klient-side
+  // på eksakt planId-match. Uten dette ender vi opp med første plan
+  // i listen (alfabetisk), som er feil eiendom.
+  const allePlaner = await hentPlanerForKommune(kundeId);
+  const plan = allePlaner.find((p) => p.planId === planidentifikasjon);
 
-  if (planer.length === 0) return null;
-
-  const plan = planer[0];
+  if (!plan) return null;
   const [alleDokumenter, dispensasjoner] = await Promise.all([
     hentPlanDokumenter(kundeId, plan.id),
     hentDispensasjoner(kundeId, plan.id),
