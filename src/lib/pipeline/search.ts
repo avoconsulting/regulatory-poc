@@ -5,8 +5,11 @@ const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
 const EMBEDDING_MODEL = "voyage-3";
 
 function getSupabase() {
+  // Server-only modul — bruk service role for å unngå RLS som skjuler
+  // documents-tabellen for anon. (Ingest-pipelinen i embed.ts bruker også
+  // service role; konsistens på tvers er bevisst.)
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   return createClient<Database>(url, key);
 }
 
@@ -68,12 +71,19 @@ export async function searchDocuments(
   const threshold = opts?.matchThreshold ?? 0.3;
   const count = opts?.matchCount ?? 8;
 
+  // Når en kategori er spesifisert filtrerer vi i JS etter RPC. Hent derfor
+  // en moderat større pool slik at smale kategorier ikke faller helt ut når
+  // topp-treff globalt er i andre kategorier. Holder oversamplingen lav nok
+  // til å unngå statement-timeout — for strenge kategorifilter på smal
+  // kategori er bedre å pushe filteret inn i SQL (se TODO i ku-trigger).
+  const rpcCount = opts?.category ? Math.max(count * 4, 24) : count;
+
   const supabase = getSupabase();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.rpc as any)("match_documents_reranked", {
     query_embedding: JSON.stringify(embedding),
     match_threshold: threshold,
-    match_count: count,
+    match_count: rpcCount,
   });
 
   if (error) {
@@ -91,9 +101,8 @@ export async function searchDocuments(
     rerankScore: r.rerank_score,
   })) as SearchResult[];
 
-  // Filtrer på kategori om spesifisert
   if (opts?.category) {
-    results = results.filter((r) => r.category === opts.category);
+    results = results.filter((r) => r.category === opts.category).slice(0, count);
   }
 
   return results;

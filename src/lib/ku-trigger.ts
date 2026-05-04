@@ -112,17 +112,17 @@ export async function assessKuTrigger(
   input: KuTriggerInput,
   stedKontekst: StedKontekst
 ): Promise<KuAssessment> {
-  // Hent relevante KU-paragrafer via RAG. Vi prioriterer lov_og_forskrift
-  // (forskriften selv) framfor forarbeider, siden vi vil ha den faktiske
-  // ordlyden, ikke tolkningsbidrag.
-  const searchQuery = `konsekvensutredning vedlegg krav trigger ${
+  // Hent relevante KU-paragrafer via RAG. KU-forskriften ligger i kategori
+  // 'ku' (egen tverrgående mappe), ikke 'lov_og_forskrift'. Vi dropper
+  // kategorifilter — reranking-vektene løfter ku (0.85) og lov_og_forskrift
+  // (0.92) over forarbeider (0.80) og forvaltningspraksis (0.70).
+  const searchQuery = `KU-forskriften vedlegg I II konsekvensutredning ${
     input.tiltak.bruksformål ?? ""
   } ${input.tiltak.beskrivelse}`;
 
   const ragResults = await searchDocuments(searchQuery, {
     matchCount: 8,
     matchThreshold: 0.3,
-    category: "lov_og_forskrift",
   }).catch(() => []);
 
   const ragContext =
