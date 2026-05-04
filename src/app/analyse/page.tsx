@@ -16,7 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { searchAddresses, runAnalysis } from "./actions";
 import type { Adresse } from "@/lib/kartverket";
-import type { RisikoAnalyse, RedFlag, Strategi, Oppside } from "@/lib/analyse";
+import type { RisikoAnalyse, RedFlag } from "@/lib/analyse";
+import type { KuOutcome, KuTrigger } from "@/lib/ku-trigger";
 
 // ──────────────────────────────────────────────
 // Hjelpefunksjoner for visning
@@ -56,6 +57,39 @@ function risikoFarge(r: string) {
       return "secondary";
     default:
       return "outline";
+  }
+}
+
+function kuOutcomeFarge(o: KuOutcome) {
+  switch (o) {
+    case "always_ku":
+      return "destructive";
+    case "must_assess":
+      return "default";
+    case "no_trigger":
+      return "secondary";
+  }
+}
+
+function kuOutcomeTekst(o: KuOutcome) {
+  switch (o) {
+    case "always_ku":
+      return "KU obligatorisk";
+    case "must_assess":
+      return "Må vurderes";
+    case "no_trigger":
+      return "Ingen trigger";
+  }
+}
+
+function kuSeverityFarge(s: KuTrigger["severity"]) {
+  switch (s) {
+    case "critical":
+      return "destructive";
+    case "high":
+      return "default";
+    case "medium":
+      return "secondary";
   }
 }
 
@@ -390,6 +424,58 @@ export default function AnalysePage() {
               <p className="text-sm leading-relaxed">{analyse.oppsummering}</p>
             </CardContent>
           </Card>
+
+          {/* KU-vurdering */}
+          {analyse.kuVurdering && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Konsekvensutredning (KU)</CardTitle>
+                  <Badge
+                    variant={kuOutcomeFarge(analyse.kuVurdering.outcome)}
+                    className="text-sm px-3 py-1"
+                  >
+                    {kuOutcomeTekst(analyse.kuVurdering.outcome)}
+                  </Badge>
+                </div>
+                <CardDescription>
+                  Vurdering basert på KU-forskriften, sted-kontekst og
+                  tiltakets karakter (konfidens:{" "}
+                  {analyse.kuVurdering.confidence})
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm leading-relaxed">
+                  {analyse.kuVurdering.rationale}
+                </p>
+
+                {analyse.kuVurdering.triggers.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">
+                      Identifiserte triggere ({analyse.kuVurdering.triggers.length})
+                    </h3>
+                    {analyse.kuVurdering.triggers.map((t, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border p-3 space-y-1 text-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-medium">{t.description}</div>
+                          <Badge variant={kuSeverityFarge(t.severity)}>
+                            {t.severity}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground flex gap-3">
+                          <span>Kategori: {t.category.replace("_", " ")}</span>
+                          <span>Kilde: {t.sourceRef}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Red flags */}
           {analyse.redFlags.length > 0 && (

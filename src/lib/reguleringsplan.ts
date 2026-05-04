@@ -1,3 +1,5 @@
+import { wmsFeatureInfo } from "./wms";
+
 const DIBK_WMS_BASE =
   "https://nap.ft.dibk.no/services/wms/reguleringsplaner/";
 
@@ -118,62 +120,6 @@ export const AREALFORMAAL: Record<number, string> = {
 };
 
 // ──────────────────────────────────────────────
-// Hjelpefunksjoner
-// ──────────────────────────────────────────────
-
-function buildGetFeatureInfoUrl(
-  layer: string,
-  lat: number,
-  lon: number,
-  featureCount = 10
-): string {
-  // Lager en liten bbox rundt punktet (~50m)
-  const delta = 0.001;
-  const bbox = `${lat - delta},${lon - delta},${lat + delta},${lon + delta}`;
-
-  const params = new URLSearchParams({
-    service: "WMS",
-    version: "1.3.0",
-    request: "GetFeatureInfo",
-    layers: layer,
-    query_layers: layer,
-    crs: "EPSG:4326",
-    bbox,
-    width: "256",
-    height: "256",
-    i: "128",
-    j: "128",
-    info_format: "application/json",
-    feature_count: String(featureCount),
-  });
-
-  return `${DIBK_WMS_BASE}?${params.toString()}`;
-}
-
-async function wmsFeatureInfo<T>(
-  layer: string,
-  lat: number,
-  lon: number,
-  featureCount = 10
-): Promise<T[]> {
-  const url = buildGetFeatureInfoUrl(layer, lat, lon, featureCount);
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-  });
-
-  if (!res.ok) {
-    throw new Error(
-      `DiBK WMS-feil: ${res.status} ${res.statusText} (${layer})`
-    );
-  }
-
-  const data = await res.json();
-  return (data.features ?? []).map(
-    (f: { properties: T }) => f.properties
-  );
-}
-
-// ──────────────────────────────────────────────
 // Offentlige funksjoner
 // ──────────────────────────────────────────────
 
@@ -182,9 +128,9 @@ export async function hentReguleringsplan(
   lon: number
 ): Promise<ReguleringsplanResultat> {
   const [planomrader, arealformaal, hensynssoner] = await Promise.all([
-    wmsFeatureInfo<Planomrade>("rpomrade_vn2", lat, lon),
-    wmsFeatureInfo<Arealformaal>("arealformal_vn2", lat, lon),
-    wmsFeatureInfo<Hensynssone>("hensynssoner_vn2", lat, lon),
+    wmsFeatureInfo<Planomrade>(DIBK_WMS_BASE, "rpomrade_vn2", lat, lon),
+    wmsFeatureInfo<Arealformaal>(DIBK_WMS_BASE, "arealformal_vn2", lat, lon),
+    wmsFeatureInfo<Hensynssone>(DIBK_WMS_BASE, "hensynssoner_vn2", lat, lon),
   ]);
 
   return { planomrader, arealformaal, hensynssoner };

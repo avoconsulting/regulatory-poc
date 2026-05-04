@@ -13,7 +13,8 @@
     "probe:index": "npx tsx --env-file=.env.local scripts/probe-index.ts",
     "probe:vectors": "npx tsx --env-file=.env.local scripts/probe-vectors.ts",
     "probe:search": "npx tsx --env-file=.env.local scripts/probe-search.ts",
-    "probe:similarity": "npx tsx --env-file=.env.local scripts/probe-similarity.ts"
+    "probe:similarity": "npx tsx --env-file=.env.local scripts/probe-similarity.ts",
+    "probe:sted": "npx tsx --env-file=.env.local scripts/probe-sted-kontekst.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.87.0",

@@ -9,6 +9,7 @@ import {
 } from "./reguleringsplan";
 import type { PlanbestemmelserResultat } from "./planbestemmelser";
 import type { EInnsynSokResultat } from "./einnsyn";
+import type { KuAssessment } from "./ku-trigger";
 import {
   searchDocuments,
   byggKunnskapsbaseKontekst,
@@ -37,6 +38,7 @@ export interface AnalyseInput {
   tiltak: Tiltak;
   plandata: PlanbestemmelserResultat;
   dispensasjonshistorikk?: EInnsynSokResultat;
+  kuVurdering?: KuAssessment | null;
 }
 
 // ──────────────────────────────────────────────
@@ -75,6 +77,7 @@ export interface RisikoAnalyse {
   oppsider: Oppside[];
   anbefalinger: string[];
   referanser: string[];
+  kuVurdering?: KuAssessment | null;
 }
 
 // ──────────────────────────────────────────────
@@ -183,6 +186,37 @@ function byggDispensasjonsKontekst(
       );
     }
   }
+  return deler.join("\n");
+}
+
+function byggKuKontekst(ku: KuAssessment | null | undefined): string {
+  if (!ku) return "";
+
+  const outcomeTekst = {
+    always_ku: "**KU er obligatorisk** (KU-forskriften Vedlegg I)",
+    must_assess: "**KU må vurderes nærmere** (KU-forskriften Vedlegg II eller sted-kontekst)",
+    no_trigger: "Ingen KU-trigger identifisert",
+  }[ku.outcome];
+
+  const deler = [
+    "## KU-trigger-vurdering (forhåndsanalyse)",
+    `Konklusjon: ${outcomeTekst} (konfidens: ${ku.confidence})`,
+    `Rasjonal: ${ku.rationale}`,
+  ];
+
+  if (ku.triggers.length > 0) {
+    deler.push("\nIdentifiserte triggere:");
+    for (const t of ku.triggers) {
+      deler.push(
+        `- [${t.severity}] ${t.description} *(${t.sourceRef})*`
+      );
+    }
+  }
+
+  deler.push(
+    "\n*Bruk denne forhåndsvurderingen som utgangspunkt — ikke gjenta den, men bygg videre i red flags og strategier hvor relevant.*"
+  );
+
   return deler.join("\n");
 }
 
@@ -314,6 +348,8 @@ export async function analyserReguleringsrisiko(
 
 ## Ønsket tiltak
 ${tiltakTekst}
+
+${byggKuKontekst(input.kuVurdering)}
 
 ## Tilgjengelig plandata
 
