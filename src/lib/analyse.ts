@@ -232,16 +232,18 @@ Din oppgave er å analysere reguleringsrisiko for et foreslått byggetiltak base
 
 Gitt en eiendom, gjeldende planer og et ønsket tiltak:
 
-1. **Identifiser red flags** — konflikter mellom tiltaket og gjeldende bestemmelser. Kategoriser hver som:
+1. **Identifiser red flags** (maks 6, prioriter de viktigste) — konflikter mellom tiltaket og gjeldende bestemmelser. Kategoriser hver som:
    - \`hard_stop\`: Direkte i strid med lov eller plan uten realistisk dispensasjonsmulighet
    - \`dispenserbar\`: Krever dispensasjon, men det finnes presedens eller grunnlag for at det kan innvilges
    - \`akseptabel_risiko\`: Mindre avvik som normalt aksepteres i praksis
 
 2. **Foreslå 2–3 strategier** med ulik risikoprofil. Hver strategi skal inneholde konkrete justeringer av tiltaket.
 
-3. **Identifiser oppsider** — muligheter i planen eller overordnede planer som tiltakshaver kan utnytte.
+3. **Identifiser oppsider** (maks 4) — muligheter i planen eller overordnede planer som tiltakshaver kan utnytte.
 
 4. **Gi en samlet risikovurdering** (lav/moderat/høy/kritisk).
+
+5. **Anbefalinger** — maks 6 punkter, prioritert rekkefølge.
 
 ## Regler
 
@@ -251,6 +253,10 @@ Gitt en eiendom, gjeldende planer og et ønsket tiltak:
 - Ikke dikter opp lovparagrafer — referer kun til det som finnes i konteksten.
 - Hvis data mangler, si eksplisitt hva som mangler og hvordan det påvirker analysen.
 - Vær ærlig om usikkerhet.
+
+## Stil — viktig
+
+Vær konsis. Hvert "beskrivelse"-felt: 2–4 setninger, ikke avsnitt. "anbefaling", "forventetUtfall" og "potensial": 1–2 setninger. "anbefalteJusteringer": 3–5 korte stikkord per strategi, ikke fullstendige avsnitt. Ikke gjenta informasjon mellom red flags og strategier. Ikke skriv "selv om data mangler"-disclaimere flere ganger — én gang holder.
 
 ## Svarformat
 
@@ -379,10 +385,18 @@ Analyser reguleringsrisikoen for dette tiltaket.`;
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 8192,
+    max_tokens: 16384,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
   });
+
+  // Avkortet output ⇒ JSON er garantert ufullstendig. Kast en tydelig feil
+  // i stedet for å la JSON.parse krasje på "Unterminated string".
+  if (response.stop_reason === "max_tokens") {
+    throw new Error(
+      `AI-analysen ble avkortet (genererte ${response.usage.output_tokens} av ${16384} tilgjengelige tokens). Tiltaket eller konteksten gir for mye output. Forsøk å forenkle beskrivelsen, eller meld fra til utvikler så vi øker grensen.`
+    );
+  }
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
@@ -394,5 +408,18 @@ Analyser reguleringsrisikoen for dette tiltaket.`;
     .replace(/\s*```$/i, "")
     .trim();
 
-  return JSON.parse(cleaned) as RisikoAnalyse;
+  try {
+    return JSON.parse(cleaned) as RisikoAnalyse;
+  } catch (err) {
+    // Logg råteksten så vi kan diagnostisere — Vercel/Next-loggene fanger dette.
+    console.error(
+      `[analyse] JSON-parse feilet (stop_reason=${response.stop_reason}, output_tokens=${response.usage.output_tokens}):`,
+      cleaned.slice(0, 500),
+      "...",
+      cleaned.slice(-500)
+    );
+    throw new Error(
+      `Kunne ikke tolke AI-svaret som JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }

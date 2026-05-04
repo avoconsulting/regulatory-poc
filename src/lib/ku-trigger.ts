@@ -165,12 +165,19 @@ ${ragContext}
 
 Vurder om tiltaket utløser krav om konsekvensutredning.`;
 
+  const KU_MAX_TOKENS = 4096;
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2048,
+    max_tokens: KU_MAX_TOKENS,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
   });
+
+  if (response.stop_reason === "max_tokens") {
+    throw new Error(
+      `KU-trigger ble avkortet (${response.usage.output_tokens} av ${KU_MAX_TOKENS} tokens brukt).`
+    );
+  }
 
   const text =
     response.content[0].type === "text" ? response.content[0].text : "";
@@ -181,7 +188,20 @@ Vurder om tiltaket utløser krav om konsekvensutredning.`;
     .replace(/\s*```$/i, "")
     .trim();
 
-  const parsed = JSON.parse(cleaned) as Omit<KuAssessment, "contextSnapshot">;
+  let parsed: Omit<KuAssessment, "contextSnapshot">;
+  try {
+    parsed = JSON.parse(cleaned) as Omit<KuAssessment, "contextSnapshot">;
+  } catch (err) {
+    console.error(
+      `[ku-trigger] JSON-parse feilet (stop_reason=${response.stop_reason}, output_tokens=${response.usage.output_tokens}):`,
+      cleaned.slice(0, 300),
+      "...",
+      cleaned.slice(-300)
+    );
+    throw new Error(
+      `Kunne ikke tolke KU-svaret som JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 
   return {
     ...parsed,
