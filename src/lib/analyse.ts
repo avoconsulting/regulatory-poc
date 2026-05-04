@@ -326,18 +326,34 @@ export async function analyserReguleringsrisiko(
     .filter(Boolean)
     .join("\n");
 
-  // Søk i kunnskapsbasen om den er tilgjengelig (feiler stille hvis tom/ikke konfigurert)
+  // Detekter om vi mangler konkrete plan-data (typisk for Oslo, eller andre
+  // kommuner som ikke aggregerer til de nasjonale plan-tjenestene).
+  const erTomtForPlandata =
+    input.plandata.wmsPlanomrader.length === 0 &&
+    input.plandata.planregisterPlaner.length === 0 &&
+    input.plandata.planMedBestemmelser.length === 0;
+
+  // Søk i kunnskapsbasen — hent flere chunks når plandata mangler, siden
+  // kunnskapsbasen blir hovedkilden for plan-relevant kontekst i de tilfellene.
   let kunnskapsbaseKontekst = "";
   try {
-    const searchQuery = `${input.tiltak.beskrivelse} ${input.tiltak.bruksformål ?? ""} reguleringsplan bestemmelser`;
+    const searchQuery = erTomtForPlandata
+      ? `${input.kommunenavn} reguleringsplan kommuneplan ${input.tiltak.beskrivelse} ${input.tiltak.bruksformål ?? ""}`
+      : `${input.tiltak.beskrivelse} ${input.tiltak.bruksformål ?? ""} reguleringsplan bestemmelser`;
     const searchResults = await searchDocuments(searchQuery, {
-      matchCount: 6,
-      matchThreshold: 0.72,
+      matchCount: erTomtForPlandata ? 12 : 6,
+      matchThreshold: 0.3,
     });
     kunnskapsbaseKontekst = byggKunnskapsbaseKontekst(searchResults);
   } catch {
     // Kunnskapsbasen er ikke konfigurert ennå — analyser uten
   }
+
+  // Eksplisitt advarsel til AI når plan-data mangler. Forhindrer at AI bare
+  // svarer "Kritisk - manglende data" uten å gi nyttig veiledning.
+  const plandataAdvarsel = erTomtForPlandata
+    ? `\n## VIKTIG: Manglende konkrete plandata\n\nDe nasjonale plan-tjenestene (DiBK NAP, Planslurpen, arealplaner.no) har ikke data for ${input.kommunenavn} (typisk for Oslo som har eget plansystem hos PBE). Analysen må derfor bygges på generell norsk plan- og bygningsrett, kunnskapsbasen, og brukerens beskrivelse av tiltaket.\n\nGi likevel en *brukbar* analyse: identifiser typiske risikoer for tiltakstypen i ${input.kommunenavn}, henvis til konkrete PBL-paragrafer der det er relevant, og foreslå hva utbygger bør sjekke selv (kommunens eget planinnsynssystem, kommunale veiledere, evt. forhåndsdialog med plan- og bygningsetaten). Ikke gi opp med "kritisk – manglende data". Vær eksplisitt om hvilke spørsmål som krever direkte plan-oppslag for å besvares.\n`
+    : "";
 
   const userPrompt = `# Reguleringsrisikoanalyse
 
@@ -350,7 +366,7 @@ export async function analyserReguleringsrisiko(
 ${tiltakTekst}
 
 ${byggKuKontekst(input.kuVurdering)}
-
+${plandataAdvarsel}
 ## Tilgjengelig plandata
 
 ${byggPlandataKontekst(input.plandata)}
@@ -362,7 +378,7 @@ ${kunnskapsbaseKontekst}
 Analyser reguleringsrisikoen for dette tiltaket.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
