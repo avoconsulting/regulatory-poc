@@ -84,9 +84,26 @@ async function main() {
         continue;
       }
 
+      // PDF-parse returnerer kun sidemarkører ("-- 1 of N --") for scannede
+      // PDF-er. Slik tekst gir 0 chunks etter MIN_CHUNK_SIZE-filtrering, og
+      // filen vil bli prøvd på nytt ved hver kjøring fordi den aldri ender
+      // i DB. Detekter scenariet eksplisitt så det er åpenbart i loggen.
+      const meaningfulText = doc.text.replace(/--\s*\d+\s+of\s+\d+\s*--/g, "").trim();
+      if (meaningfulText.length < 100) {
+        console.log(`     ⚠ Scannet/billed-PDF (${meaningfulText.length} tegn ekstrahert) — krever OCR, hopper over`);
+        skipped++;
+        continue;
+      }
+
       // Steg 2: Chunk
       const chunks = chunkDocument(doc, filePath);
       console.log(`     ${chunks.length} chunks, kategori: ${chunks[0]?.metadata.category ?? "ukjent"}`);
+
+      if (chunks.length === 0) {
+        console.log(`     ⚠ 0 chunks etter filtrering — hopper over`);
+        skipped++;
+        continue;
+      }
 
       if (dryRun) {
         totalChunks += chunks.length;
