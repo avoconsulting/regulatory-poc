@@ -150,9 +150,15 @@ async function main() {
   console.log(`\n  Samlet risikovurdering: ${analyse.samletRisikovurdering.toUpperCase()}`);
   console.log(`  Oppsummering: ${analyse.oppsummering}`);
 
-  console.log(`\n  Red flags (${analyse.redFlags.length}):`);
+  const matchedCount = analyse.redFlags.filter((rf) => rf.bibliotekRef).length;
+  console.log(
+    `\n  Red flags (${analyse.redFlags.length}, ${matchedCount} matchet bibliotek):`
+  );
   for (const rf of analyse.redFlags) {
-    console.log(`    [${rf.alvorlighet}] ${rf.tittel}`);
+    const ref = rf.bibliotekRef
+      ? ` ↪ bibliotek #${rf.bibliotekRef.rang}: ${rf.bibliotekRef.navn}`
+      : ` (utenfor bibliotek)`;
+    console.log(`    [${rf.alvorlighet}] ${rf.tittel}${ref}`);
     console.log(`      Beskrivelse: ${rf.beskrivelse}`);
     console.log(`      Hjemmel: ${rf.hjemmel}`);
     console.log(`      Anbefaling: ${rf.anbefaling}`);

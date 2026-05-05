@@ -16,6 +16,7 @@ import {
   type SearchResult,
 } from "./pipeline/search";
 import { ground, type GroundingResult } from "./grounding";
+import { loadRiskLibrary, formatRiskLibraryForPrompt } from "./risk-library";
 
 // ──────────────────────────────────────────────
 // Typer – brukerinput
@@ -53,6 +54,14 @@ export interface RedFlag {
   alvorlighet: "hard_stop" | "dispenserbar" | "akseptabel_risiko";
   hjemmel: string;
   anbefaling: string;
+  /** Hvis red flag-et matcher et entry i kundens kuraterte 15-flagg-bibliotek,
+   *  refererer dette feltet til den entry-en. AI skal foretrekke å matche
+   *  fremfor å finne opp nye flagg. null hvis tiltaket avdekker noe utenfor
+   *  biblioteket. */
+  bibliotekRef?: {
+    rang: number;
+    navn: string;
+  } | null;
 }
 
 export interface Strategi {
@@ -243,6 +252,11 @@ Gitt en eiendom, gjeldende planer og et ønsket tiltak:
    - \`dispenserbar\`: Krever dispensasjon, men det finnes presedens eller grunnlag for at det kan innvilges
    - \`akseptabel_risiko\`: Mindre avvik som normalt aksepteres i praksis
 
+   **Match mot biblioteket først.** Du får et bibliotek på 15 ferdig-kategoriserte red flags fra kundens fagvurdering. For hvert red flag du identifiserer:
+   - Hvis flagget *passer* (helt eller delvis) til ett av bibliotekets 15 entry-er, sett \`bibliotekRef: { rang: N, navn: "exact navn fra biblioteket" }\`. Beskriv tiltaks-spesifikke detaljer i \`beskrivelse\`, men la matchen være eksplisitt.
+   - Hvis ingen bibliotek-flagg passer, sett \`bibliotekRef: null\` — du kan fritt foreslå et nytt flagg, men kun når biblioteket ikke dekker det.
+   - Foretrekk å matche fremfor å splitte. Et bredt bibliotek-flagg er mer verdt for kunden enn flere overlappende egendefinerte.
+
 2. **Foreslå 2–3 strategier** med ulik risikoprofil. Hver strategi skal inneholde konkrete justeringer av tiltaket.
 
 3. **Identifiser oppsider** (maks 4) — muligheter i planen eller overordnede planer som tiltakshaver kan utnytte.
@@ -277,7 +291,8 @@ Svar i JSON med følgende struktur:
       "beskrivelse": "Detaljert forklaring av konflikten",
       "alvorlighet": "hard_stop|dispenserbar|akseptabel_risiko",
       "hjemmel": "Referanse til bestemmelse, paragraf eller plan",
-      "anbefaling": "Hva tiltakshaver bør gjøre"
+      "anbefaling": "Hva tiltakshaver bør gjøre",
+      "bibliotekRef": { "rang": 5, "navn": "Kostbare rekkefølgebestemmelser" }
     }
   ],
   "strategier": [
@@ -363,6 +378,17 @@ export async function analyserReguleringsrisiko(
     // Kunnskapsbasen er ikke konfigurert ennå — analyser uten
   }
 
+  // Last kundens kuraterte risikobibliotek. Hvis det av en eller annen grunn
+  // ikke kan lastes (DB nede), kjør analysen uten biblioteket — bedre å levere
+  // freelancing-output enn ingen output.
+  let bibliotekKontekst = "";
+  try {
+    const lib = await loadRiskLibrary();
+    bibliotekKontekst = formatRiskLibraryForPrompt(lib);
+  } catch (err) {
+    console.error("[analyse] Kunne ikke laste risikobibliotek:", err);
+  }
+
   // Eksplisitt advarsel til AI når plan-data mangler. Forhindrer at AI bare
   // svarer "Kritisk - manglende data" uten å gi nyttig veiledning.
   const plandataAdvarsel = erTomtForPlandata
@@ -379,6 +405,8 @@ export async function analyserReguleringsrisiko(
 ## Ønsket tiltak
 ${tiltakTekst}
 
+${bibliotekKontekst}
+
 ${byggKuKontekst(input.kuVurdering)}
 ${plandataAdvarsel}
 ## Tilgjengelig plandata
@@ -389,7 +417,7 @@ ${byggDispensasjonsKontekst(input.dispensasjonshistorikk)}
 
 ${kunnskapsbaseKontekst}
 
-Analyser reguleringsrisikoen for dette tiltaket.`;
+Analyser reguleringsrisikoen for dette tiltaket. Husk: match mot bibliotek-flaggene først, foreslå nye kun der biblioteket ikke dekker.`;
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
