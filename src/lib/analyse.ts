@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { createClient } from "@supabase/supabase-js";
 import {
   plantypeTekst,
   planstatusTekst,
@@ -62,6 +63,10 @@ export interface RedFlag {
     rang: number;
     navn: string;
   } | null;
+  /** Overordnet risikokategori — én av kundens 12 kuraterte kategorier (se
+   *  risk_categories-tabellen). Brukes i UI for gruppering og taksonomi.
+   *  AI skal velge eksakt navn fra listen i prompten. */
+  risikokategori?: string;
 }
 
 export interface Strategi {
@@ -273,6 +278,8 @@ Gitt en eiendom, gjeldende planer og et ønsket tiltak:
    - Hvis ingen bibliotek-flagg passer, sett \`bibliotekRef: null\` — du kan fritt foreslå et nytt flagg, men kun når biblioteket ikke dekker det.
    - Foretrekk å matche fremfor å splitte. Et bredt bibliotek-flagg er mer verdt for kunden enn flere overlappende egendefinerte.
 
+   **Sett alltid \`risikokategori\`** til eksakt navn fra én av de 12 overordnede risikokategoriene som er listet senere i prompten. Brukes til gruppering i UI. Velg den som passer best — ikke finn opp nye kategorier.
+
 2. **Foreslå 2–3 strategier** med ulik risikoprofil. Hver strategi skal inneholde konkrete justeringer av tiltaket.
 
 3. **Identifiser oppsider** (maks 4) — muligheter i planen eller overordnede planer som tiltakshaver kan utnytte.
@@ -308,7 +315,8 @@ Svar i JSON med følgende struktur:
       "alvorlighet": "hard_stop|dispenserbar|akseptabel_risiko",
       "hjemmel": "Referanse til bestemmelse, paragraf eller plan",
       "anbefaling": "Hva tiltakshaver bør gjøre",
-      "bibliotekRef": { "rang": 5, "navn": "Kostbare rekkefølgebestemmelser" }
+      "bibliotekRef": { "rang": 5, "navn": "Kostbare rekkefølgebestemmelser" },
+      "risikokategori": "Rekkefølge- og gjennomføringsrisiko"
     }
   ],
   "strategier": [
@@ -508,4 +516,68 @@ Analyser reguleringsrisikoen for dette tiltaket. Husk: match mot bibliotek-flagg
   const grounding = ground(allText, searchResults);
 
   return { ...parsed, grounding };
+}
+
+// ──────────────────────────────────────────────
+// Persistens
+// ──────────────────────────────────────────────
+
+export interface SaveAnalysisArgs {
+  adresse: string;
+  kommunenavn: string;
+  kommunenummer: string;
+  gnr: number;
+  bnr: number;
+  tiltak: Tiltak;
+  result: RisikoAnalyse;
+  projectId?: string;
+  kuAssessmentId?: string;
+}
+
+/**
+ * Lagrer en komplett RisikoAnalyse til analyses-tabellen.
+ *
+ * Beste-innsats: hvis migrasjon 008 ikke er kjørt (tabellen finnes ikke),
+ * logger vi og returnerer null. Bedre å levere analyse til bruker uten
+ * persistens enn å feile hele requesten.
+ */
+export async function saveAnalysis(
+  args: SaveAnalysisArgs
+): Promise<{ id: string } | null> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const hardStops = args.result.redFlags.filter(
+    (rf) => rf.alvorlighet === "hard_stop"
+  ).length;
+
+  const { data, error } = await supabase
+    .from("analyses")
+    .insert({
+      project_id: args.projectId,
+      adresse: args.adresse,
+      kommunenavn: args.kommunenavn,
+      kommunenummer: args.kommunenummer,
+      gnr: args.gnr,
+      bnr: args.bnr,
+      tiltak: args.tiltak,
+      result: args.result,
+      ku_assessment_id: args.kuAssessmentId,
+      samlet_risiko: args.result.samletRisikovurdering,
+      red_flag_count: args.result.redFlags.length,
+      hard_stop_count: hardStops,
+      grounding_coverage: args.result.grounding?.coverage ?? null,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    // Tabellen mangler eller annen feil — log og kjør videre
+    console.error(`[analyse] saveAnalysis feilet: ${error.message}`);
+    return null;
+  }
+
+  return { id: data.id };
 }

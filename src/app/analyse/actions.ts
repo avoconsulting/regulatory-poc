@@ -5,6 +5,7 @@ import { hentPlanbestemmelser } from "@/lib/planbestemmelser";
 import { sokDispensasjoner } from "@/lib/einnsyn";
 import {
   analyserReguleringsrisiko,
+  saveAnalysis,
   type Tiltak,
   type RisikoAnalyse,
 } from "@/lib/analyse";
@@ -49,8 +50,9 @@ export async function runAnalysis(
       return null;
     });
 
-    // Hovedanalyse + KU-lagring parallelt etter at KU-resultatet foreligger
-    const [analyse] = await Promise.all([
+    // Hovedanalyse + KU-lagring parallelt etter at KU-resultatet foreligger.
+    // KU-id må fanges så vi kan koble den til analyses-raden.
+    const [analyse, kuSaveResult] = await Promise.all([
       analyserReguleringsrisiko({
         adresse,
         kommunenavn,
@@ -72,14 +74,28 @@ export async function runAnalysis(
             bnr: bruksnummer,
           }).catch((err) => {
             console.error("Lagring av KU-vurdering feilet:", err);
+            return null;
           })
-        : Promise.resolve(),
+        : Promise.resolve(null),
     ]);
 
-    return {
-      ok: true,
-      data: { ...analyse, kuVurdering },
-    };
+    const fullResult: RisikoAnalyse = { ...analyse, kuVurdering };
+
+    // Persistens — beste-innsats. Feil her skal ikke blokkere svaret.
+    saveAnalysis({
+      adresse,
+      kommunenavn,
+      kommunenummer,
+      gnr: gardsnummer,
+      bnr: bruksnummer,
+      tiltak,
+      result: fullResult,
+      kuAssessmentId: kuSaveResult?.id,
+    }).catch((err) => {
+      console.error("Lagring av analyse feilet:", err);
+    });
+
+    return { ok: true, data: fullResult };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

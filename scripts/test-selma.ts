@@ -163,6 +163,9 @@ async function main() {
       ? ` ↪ bibliotek #${rf.bibliotekRef.rang}: ${rf.bibliotekRef.navn}`
       : ` (utenfor bibliotek)`;
     console.log(`    [${rf.alvorlighet}] ${rf.tittel}${ref}`);
+    if (rf.risikokategori) {
+      console.log(`      Kategori: ${rf.risikokategori}`);
+    }
     console.log(`      Beskrivelse: ${rf.beskrivelse}`);
     console.log(`      Hjemmel: ${rf.hjemmel}`);
     console.log(`      Anbefaling: ${rf.anbefaling}`);
