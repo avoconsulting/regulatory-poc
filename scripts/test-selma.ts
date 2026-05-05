@@ -78,6 +78,10 @@ async function main() {
   console.log(`    - bestemmelser-dokumenter: ${plandata.planMedBestemmelser.length}`);
   console.log(`    - planslurpStatuser: ${plandata.planslurpStatuser.length}`);
   console.log(`    - planer uten arealplaner-data: ${plandata.ikkeIArealplaner.length}`);
+  console.log(`    - naboplaner: ${plandata.naboplaner.length}`);
+  for (const np of plandata.naboplaner.slice(0, 5)) {
+    console.log(`        ↪ ${np.plannavn} (${np["arealplanId.planidentifikasjon"]})`);
+  }
 
   console.log(`\n  Dispensasjonshistorikk (eInnsyn): ${dispensasjoner?.items.length ?? 0} treff`);
   if (dispensasjoner && dispensasjoner.items.length > 0) {

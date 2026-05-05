@@ -170,6 +170,22 @@ function byggPlandataKontekst(plandata: PlanbestemmelserResultat): string {
     deler.push("");
   }
 
+  // Naboplaner — kan binde via rekkefølgekrav, hensynssoner, felles utomhus
+  if (plandata.naboplaner.length > 0) {
+    deler.push(
+      "## Naboplaner (~100m radius)",
+      "",
+      "Detaljregulering på naboeiendom kan binde tiltaket via rekkefølgekrav, hensynssoner som overlapper, eller felles utomhusplan/infrastruktur. Vurder spesielt om tiltaket utløser krav fra disse planene som ikke fremgår av egen plan:",
+      ""
+    );
+    for (const p of plandata.naboplaner) {
+      deler.push(
+        `- ${p.plannavn} (${plantypeTekst(p.plantype)}, ${planstatusTekst(p.planstatus)}) — Plan-ID: ${p["arealplanId.planidentifikasjon"]}`
+      );
+    }
+    deler.push("");
+  }
+
   // Planer ikke funnet i arealplaner.no
   if (plandata.ikkeIArealplaner.length > 0) {
     deler.push("## Planer uten tilgjengelige bestemmelser\n");

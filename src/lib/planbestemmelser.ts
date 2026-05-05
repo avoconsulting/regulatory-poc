@@ -1,4 +1,5 @@
 import { hentReguleringsplan, type Planomrade } from "./reguleringsplan";
+import { hentNaboplaner } from "./naboplaner";
 import {
   hentPlanregister,
   hentPlanslurpStatus,
@@ -34,6 +35,10 @@ export interface PlanbestemmelserResultat {
   planslurpStatuser: (PlanslurpStatus & { planId: string })[];
   /** Planer som ikke ble funnet på arealplaner.no */
   ikkeIArealplaner: PlanInfo[];
+  /** Naboplaner — detaljregulering på tilliggende eiendommer som kan binde
+   *  tiltaket via rekkefølgekrav, hensynssoner eller felles utomhusplan.
+   *  Kun metadata; bestemmelser hentes ikke automatisk for å holde latency nede. */
+  naboplaner: Planomrade[];
 }
 
 // ──────────────────────────────────────────────
@@ -47,7 +52,7 @@ export async function hentPlanbestemmelser(
   gardsnummer: number,
   bruksnummer: number
 ): Promise<PlanbestemmelserResultat> {
-  // Steg 1: Hent plandata fra begge kilder parallelt
+  // Steg 1: Hent plandata fra egen tomt + planregister parallelt
   const [wmsResultat, planregisterResultat] = await Promise.all([
     hentReguleringsplan(lat, lon).catch(() => ({
       planomrader: [],
@@ -56,6 +61,18 @@ export async function hentPlanbestemmelser(
     })),
     hentPlanregister(kommunenummer, gardsnummer, bruksnummer).catch(() => null),
   ]);
+
+  // Steg 1b: Hent naboplaner i ~100m ring. Ekskluderer egne plan-ID-er
+  // så naboplaner-listen kun inneholder ny informasjon. Gjøres etter steg 1
+  // for å kunne filtrere mot egne plan-ID-er.
+  const egneplanIds = new Set(
+    wmsResultat.planomrader.map(
+      (p) => `${p["arealplanId.kommunenummer"]}-${p["arealplanId.planidentifikasjon"]}`
+    )
+  );
+  const naboplaner = await hentNaboplaner(lat, lon, egneplanIds).catch(
+    () => [] as Planomrade[]
+  );
 
   // Steg 2: Samle unike planidentifikasjoner fra begge kilder
   const planerMap = new Map<string, PlanInfo>();
@@ -135,5 +152,6 @@ export async function hentPlanbestemmelser(
     planMedBestemmelser,
     planslurpStatuser,
     ikkeIArealplaner,
+    naboplaner,
   };
 }
