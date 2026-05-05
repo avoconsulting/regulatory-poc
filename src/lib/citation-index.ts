@@ -1,6 +1,6 @@
 // Auto-generert av scripts/build-citation-index.ts
-// Sist oppdatert: 2026-05-05T06:33:53.170Z
-// Antall chunks behandlet: 19525
+// Sist oppdatert: 2026-05-05T12:42:35.310Z
+// Antall chunks behandlet: 19537
 //
 // Brukes av grounding.ts for å verifisere AI-sitater mot hele korpuset,
 // ikke bare chunks som ble hentet i en gitt analyse. Kjør build-skriptet
@@ -845,8 +845,8 @@ export const CORPUS_STANDARDS = new Set<string>([
 ]);
 
 export const CORPUS_INDEX_META = {
-  generatedAt: "2026-05-05T06:33:53.172Z",
-  chunkCount: 19525,
+  generatedAt: "2026-05-05T12:42:35.311Z",
+  chunkCount: 19537,
   paragraphCount: 632,
   caselawCount: 45,
   standardCount: 152,
