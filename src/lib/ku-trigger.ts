@@ -173,6 +173,11 @@ Vurder om tiltaket utløser krav om konsekvensutredning.`;
     messages: [{ role: "user", content: userPrompt }],
   });
 
+  const u = response.usage;
+  console.log(
+    `[ku-trigger] tokens: input=${u.input_tokens} output=${u.output_tokens}`
+  );
+
   if (response.stop_reason === "max_tokens") {
     throw new Error(
       `KU-trigger ble avkortet (${response.usage.output_tokens} av ${KU_MAX_TOKENS} tokens brukt).`

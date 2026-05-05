@@ -398,6 +398,15 @@ Analyser reguleringsrisikoen for dette tiltaket.`;
     messages: [{ role: "user", content: userPrompt }],
   });
 
+  // Logg token-bruk — gir oss innsyn for fremtidig optimalisering. Prompt-
+  // caching er foreløpig ikke verdt det fordi systemprompten er ~1155 tokens,
+  // under Sonnet 4.6 sin 2048-token cacheterskel. Krever redesign (f.eks. å
+  // legge stabilt referansemateriale i system-blokken) før caching slår inn.
+  const u = response.usage;
+  console.log(
+    `[analyse] tokens: input=${u.input_tokens} output=${u.output_tokens}`
+  );
+
   // Avkortet output ⇒ JSON er garantert ufullstendig. Kast en tydelig feil
   // i stedet for å la JSON.parse krasje på "Unterminated string".
   if (response.stop_reason === "max_tokens") {
