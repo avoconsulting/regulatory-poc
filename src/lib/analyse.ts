@@ -13,7 +13,9 @@ import type { KuAssessment } from "./ku-trigger";
 import {
   searchDocuments,
   byggKunnskapsbaseKontekst,
+  type SearchResult,
 } from "./pipeline/search";
+import { ground, type GroundingResult } from "./grounding";
 
 // ──────────────────────────────────────────────
 // Typer – brukerinput
@@ -78,6 +80,10 @@ export interface RisikoAnalyse {
   anbefalinger: string[];
   referanser: string[];
   kuVurdering?: KuAssessment | null;
+  /** Citation grounding: hvilke kilde-referanser AI-en ga som faktisk er
+   *  forankret i de hentede kunnskapsbase-chunkene. Brukes for å markere
+   *  uverifiserte sitater i UI så sluttbruker kan sjekke dem manuelt. */
+  grounding?: GroundingResult;
 }
 
 // ──────────────────────────────────────────────
@@ -341,12 +347,14 @@ export async function analyserReguleringsrisiko(
 
   // Søk i kunnskapsbasen — hent flere chunks når plandata mangler, siden
   // kunnskapsbasen blir hovedkilden for plan-relevant kontekst i de tilfellene.
+  // searchResults beholdes til grounding-steget etter AI-svaret.
   let kunnskapsbaseKontekst = "";
+  let searchResults: SearchResult[] = [];
   try {
     const searchQuery = erTomtForPlandata
       ? `${input.kommunenavn} reguleringsplan kommuneplan ${input.tiltak.beskrivelse} ${input.tiltak.bruksformål ?? ""}`
       : `${input.tiltak.beskrivelse} ${input.tiltak.bruksformål ?? ""} reguleringsplan bestemmelser`;
-    const searchResults = await searchDocuments(searchQuery, {
+    searchResults = await searchDocuments(searchQuery, {
       matchCount: erTomtForPlandata ? 12 : 6,
       matchThreshold: 0.3,
     });
@@ -408,8 +416,9 @@ Analyser reguleringsrisikoen for dette tiltaket.`;
     .replace(/\s*```$/i, "")
     .trim();
 
+  let parsed: RisikoAnalyse;
   try {
-    return JSON.parse(cleaned) as RisikoAnalyse;
+    parsed = JSON.parse(cleaned) as RisikoAnalyse;
   } catch (err) {
     // Logg råteksten så vi kan diagnostisere — Vercel/Next-loggene fanger dette.
     console.error(
@@ -422,4 +431,28 @@ Analyser reguleringsrisikoen for dette tiltaket.`;
       `Kunne ikke tolke AI-svaret som JSON: ${err instanceof Error ? err.message : String(err)}`
     );
   }
+
+  // Citation grounding: ekstraher alle siterte paragrafer/dommer/standarder
+  // og kryssjekk mot de hentede kunnskapsbase-chunkene.
+  const allText = [
+    parsed.oppsummering,
+    ...parsed.redFlags.flatMap((rf) => [
+      rf.tittel,
+      rf.beskrivelse,
+      rf.hjemmel,
+      rf.anbefaling,
+    ]),
+    ...parsed.strategier.flatMap((s) => [
+      s.beskrivelse,
+      s.forventetUtfall,
+      ...s.anbefalteJusteringer,
+    ]),
+    ...parsed.oppsider.flatMap((o) => [o.beskrivelse, o.hjemmel, o.potensial]),
+    ...parsed.anbefalinger,
+    ...parsed.referanser,
+  ].join("\n");
+
+  const grounding = ground(allText, searchResults);
+
+  return { ...parsed, grounding };
 }

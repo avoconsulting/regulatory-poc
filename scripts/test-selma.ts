@@ -184,6 +184,31 @@ async function main() {
     console.log(`    - ${r}`);
   }
 
+  if (analyse.grounding) {
+    const g = analyse.grounding;
+    console.log(
+      `\n  Citation grounding: ${g.verifiedFromContext.length} ✓context + ${g.verifiedFromCorpus.length} ◐corpus + ${g.unverified.length} ⚠unverified  (coverage ${(g.coverage * 100).toFixed(0)}%)`
+    );
+    if (g.unverified.length > 0) {
+      console.log(`\n  ⚠ Uverifiserte sitater (potensielle hallusinasjoner — sjekk manuelt):`);
+      for (const c of g.unverified) {
+        console.log(`    [${c.type}] ${c.raw} → ${c.normalized}`);
+      }
+    }
+    if (g.verifiedFromContext.length > 0) {
+      console.log(`\n  ✓ Verifisert fra hentede chunks (sterkest signal):`);
+      for (const c of g.verifiedFromContext) {
+        console.log(`    [${c.type}] ${c.raw}`);
+      }
+    }
+    if (g.verifiedFromCorpus.length > 0) {
+      console.log(`\n  ◐ Verifisert fra korpus (svakere signal — finnes ellers i kunnskapsbasen):`);
+      for (const c of g.verifiedFromCorpus) {
+        console.log(`    [${c.type}] ${c.raw}`);
+      }
+    }
+  }
+
   header(`Totalt: ${((Date.now() - startTid) / 1000).toFixed(1)}s`);
 }
 
