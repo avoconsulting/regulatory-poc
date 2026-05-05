@@ -27,6 +27,10 @@ export interface SearchResult {
   similarity: number;
   weight?: number;
   rerankScore?: number;
+  // Hybrid-spesifikke felter (kun satt når searchDocumentsHybrid brukes)
+  ftsRank?: number;
+  rrfScore?: number;
+  hybridScore?: number;
 }
 
 // ──────────────────────────────────────────────
@@ -100,6 +104,87 @@ export async function searchDocuments(
     weight: r.weight,
     rerankScore: r.rerank_score,
   })) as SearchResult[];
+
+  if (opts?.category) {
+    results = results.filter((r) => r.category === opts.category).slice(0, count);
+  }
+
+  return results;
+}
+
+// ──────────────────────────────────────────────
+// Hybrid-søk (vektor + Postgres FTS via RRF)
+// ──────────────────────────────────────────────
+//
+// Krever migrasjon 007_hybrid_search.sql. Faller tilbake til vektor-only via
+// searchDocuments hvis RPC-funksjonen ikke er tilgjengelig (f.eks. i et nytt
+// miljø der migrasjonen ennå ikke er kjørt).
+
+export async function searchDocumentsHybrid(
+  query: string,
+  opts?: {
+    matchThreshold?: number;
+    matchCount?: number;
+    category?: string;
+  }
+): Promise<SearchResult[]> {
+  const embedding = await getQueryEmbedding(query);
+  const threshold = opts?.matchThreshold ?? 0.3;
+  const count = opts?.matchCount ?? 8;
+  const rpcCount = opts?.category ? Math.max(count * 4, 24) : count;
+
+  const supabase = getSupabase();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.rpc as any)("match_documents_hybrid", {
+    query_embedding: JSON.stringify(embedding),
+    query_text: query,
+    match_threshold: threshold,
+    match_count: rpcCount,
+  });
+
+  if (error) {
+    // Hvis hybrid-RPC ikke finnes (migrasjon ikke kjørt), fall tilbake til
+    // vektor-only. PostgREST returnerer typisk PGRST202 for manglende
+    // funksjoner; vi sjekker også på "function" i meldingen som backup.
+    const code = (error as { code?: string }).code;
+    const msg = error.message ?? "";
+    if (code === "PGRST202" || /function .* does not exist|could not find/i.test(msg)) {
+      console.warn(
+        `[search] match_documents_hybrid mangler — faller tilbake til vektor-only. Kjør migrasjon 007_hybrid_search.sql.`
+      );
+      return searchDocuments(query, opts);
+    }
+    throw new Error(`Hybrid-søk feilet: ${msg}`);
+  }
+
+  type Row = {
+    id: string;
+    title: string;
+    content: string;
+    source_url: string | null;
+    category: string | null;
+    metadata: Record<string, unknown> | null;
+    similarity: number | null;
+    fts_rank: number | null;
+    category_weight: number;
+    rrf_score: number;
+    hybrid_score: number;
+  };
+
+  let results: SearchResult[] = (data ?? []).map((r: Row) => ({
+    id: r.id,
+    title: r.title,
+    content: r.content,
+    sourceUrl: r.source_url,
+    category: r.category,
+    metadata: r.metadata,
+    similarity: r.similarity ?? 0,
+    weight: r.category_weight,
+    ftsRank: r.fts_rank ?? undefined,
+    rrfScore: r.rrf_score,
+    hybridScore: r.hybrid_score,
+    rerankScore: r.hybrid_score, // alias for bakoverkompatibilitet
+  }));
 
   if (opts?.category) {
     results = results.filter((r) => r.category === opts.category).slice(0, count);
